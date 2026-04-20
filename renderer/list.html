@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';"
+    />
+    <title>MyGTC Commission - Danh sách</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand__title">MyGTC Commission</div>
+          <div class="brand__subtitle">Sheet Sync</div>
+        </div>
+        <div class="topbar__actions">
+          <button id="changeTokenBtn" class="button button--ghost" type="button">Đổi token</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="screen" aria-labelledby="listTitle">
+          <div class="card card--full">
+            <div class="card__head">
+              <div>
+                <h1 id="listTitle" class="h1">Danh sách</h1>
+                <p class="muted">Đang hiển thị <span id="recordCount">0</span> bản ghi</p>
+              </div>
+
+              <div class="card__headActions">
+                <input
+                  id="searchInput"
+                  class="input input--sm"
+                  type="search"
+                  placeholder="Tìm theo email hoặc họ tên..."
+                  inputmode="search"
+                  aria-label="Tìm theo email hoặc họ tên"
+                />
+                <button id="searchBtn" class="button button--ghost" type="button">Tìm</button>
+                <button id="refreshBtn" class="button button--ghost" type="button">Làm mới</button>
+              </div>
+            </div>
+
+            <div id="errorBanner" class="warning" role="alert" hidden></div>
+
+            <div class="tableWrap" role="region" aria-label="Bảng bản ghi">
+              <table class="table" aria-describedby="tableHelp">
+                <thead>
+                  <tr>
+                    <th class="col-idx" scope="col">#</th>
+                    <th class="col-email" scope="col">Email</th>
+                    <th class="col-name" scope="col">Họ tên</th>
+                    <th class="col-num" scope="col">Tổng nạp</th>
+                    <th class="col-num" scope="col">Tổng rút</th>
+                    <th class="col-num" scope="col">Số dư</th>
+                    <th class="col-num col-commission" scope="col">Vollum giao dịch trong tuần</th>
+                  </tr>
+                </thead>
+                <tbody id="recordsTbody">
+                  <tr>
+                    <td class="empty" colspan="7">Chưa có dữ liệu. Bấm "Làm mới" để tải bản ghi.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="pager" aria-label="Phân trang">
+              <div class="pager__left">
+                <span class="help">Hiển thị</span>
+                <select id="pageSizeSelect" class="select" aria-label="Số dòng mỗi trang">
+                  <option value="10" selected>10</option>
+                  <option value="25">25</option>
+                  <!-- <option value="50">50</option>
+                  <option value="100">100</option> -->
+                </select>
+                <span id="rangeInfo" class="help" aria-live="polite"></span>
+              </div>
+
+              <div class="pager__right">
+                <button id="prevPageBtn" class="button button--ghost" type="button">Trước</button>
+                <span id="pageInfo" class="help" aria-live="polite">Trang 1/1</span>
+                <button id="nextPageBtn" class="button button--ghost" type="button">Sau</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./list.js"></script>
+  </body>
+</html>

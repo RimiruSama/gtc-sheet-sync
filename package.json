@@ -1,0 +1,70 @@
+{
+  "name": "gtc-sheet-sync",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && electron .",
+    "dev": "tsc --watch & electron .",
+    "package": "npm run build && electron-builder",
+    "build-win": "npm run build && electron-builder --win"
+  },
+"build": {
+    "appId": "com.mygtc.commission",
+    "productName": "MyGTC Commission Report",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "renderer/**/*",
+      "node_modules/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MyGTC Commission"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RimiruSama/gtc-sheet-sync.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/RimiruSama/gtc-sheet-sync/issues"
+  },
+  "homepage": "https://github.com/RimiruSama/gtc-sheet-sync#readme",
+  "dependencies": {
+    "axios": "^1.15.1",
+    "electron": "^41.2.1",
+    "exceljs": "^4.4.0",
+    "googleapis": "^171.4.0"
+  },
+  "devDependencies": {
+    "@types/electron": "^1.4.38",
+    "@types/node": "^25.6.0",
+    "electron-builder": "^26.8.1",
+    "electron-reload": "^2.0.0-alpha.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}

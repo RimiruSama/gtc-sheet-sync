@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';"
+    />
+    <title>MyGTC Commission - Chào mừng</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand__title">MyGTC Commission</div>
+          <div class="brand__subtitle">Sheet Sync</div>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="screen" aria-labelledby="welcomeTitle">
+          <div class="card">
+            <h1 id="welcomeTitle" class="h1">Chào mừng</h1>
+            <p class="muted">Nhập token để tiếp tục. Token sẽ được lưu cục bộ trên máy này.</p>
+
+            <form id="tokenForm" class="form" autocomplete="off">
+              <label class="label" for="tokenInput">Token</label>
+              <input
+                id="tokenInput"
+                class="input"
+                type="password"
+                placeholder="Dán token vào đây"
+                inputmode="text"
+                aria-describedby="tokenHelp tokenWarning"
+              />
+              <div id="tokenWarning" class="warning" role="alert" hidden>Vui lòng nhập token để tiếp tục.</div>
+
+              <div class="row">
+                <button class="button button--primary" type="submit">Tiếp tục</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./index.js"></script>
+  </body>
+</html>

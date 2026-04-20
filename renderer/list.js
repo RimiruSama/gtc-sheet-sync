@@ -13,6 +13,8 @@
   const nextPageBtn = document.getElementById("nextPageBtn");
   const pageInfo = document.getElementById("pageInfo");
   const rangeInfo = document.getElementById("rangeInfo");
+  const exportExcelBtn = document.getElementById("exportExcelBtn");
+  const exportSheetBtn = document.getElementById("exportSheetBtn");
 
   /** @type {any[]} */
   let allRows = [];
@@ -25,6 +27,9 @@
 
   /** @type {Map<string, any>} */
   const commissionCacheByEmail = new Map();
+  /** @type {Set<string>} */
+  const commissionInFlightByEmail = new Set();
+  let commissionPrefetchRunId = 0;
 
   function getToken() {
     return window.localStorage.getItem(TOKEN_STORAGE_KEY) || "";
@@ -53,9 +58,11 @@
 
   function setLoading(next) {
     isLoading = Boolean(next);
-    const busy = isLoading || isCommissionLoading;
+    const busy = isLoading;
     if (refreshBtn) refreshBtn.disabled = busy;
     if (searchBtn) searchBtn.disabled = busy;
+    if (exportExcelBtn) exportExcelBtn.disabled = busy;
+    if (exportSheetBtn) exportSheetBtn.disabled = busy;
     if (pageSizeSelect) pageSizeSelect.disabled = busy;
     if (prevPageBtn) prevPageBtn.disabled = busy || page <= 1;
     if (nextPageBtn) nextPageBtn.disabled = busy;
@@ -64,6 +71,60 @@
   function setCommissionLoading(next) {
     isCommissionLoading = Boolean(next);
     setLoading(isLoading);
+  }
+
+  async function exportExcel() {
+    if (isLoading) return;
+    try {
+      setError("");
+      const api = window.api;
+      if (!api || typeof api.exportExcel !== "function") {
+        setError("Tính năng xuất Excel chưa sẵn sàng. Vui lòng khởi động lại ứng dụng.");
+        return;
+      }
+
+      const rows = getFilteredRows();
+      setLoading(true);
+      const result = await api.exportExcel(rows, getToken());
+      if (result && typeof result === "object" && "ok" in result) {
+        if (!result.ok) throw new Error("Không thể xuất Excel. Vui lòng thử lại.");
+      }
+    } catch (err) {
+      const message =
+        err && typeof err === "object" && "message" in err
+          ? String(err.message || "")
+          : "";
+      setError(message || "Không thể xuất Excel. Vui lòng thử lại.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function exportSheet() {
+    if (isLoading) return;
+    try {
+      setError("");
+      const api = window.api;
+      if (!api || typeof api.pushSheets !== "function") {
+        setError("Tính năng xuất lên Sheet chưa sẵn sàng. Vui lòng khởi động lại ứng dụng.");
+        return;
+      }
+
+      const rows = getFilteredRows();
+      setLoading(true);
+      const result = await api.pushSheets(rows);
+      if (result && typeof result === "object" && "ok" in result) {
+        if (!result.ok) throw new Error("Không thể xuất lên Sheet. Vui lòng thử lại.");
+      }
+    } catch (err) {
+      const message =
+        err && typeof err === "object" && "message" in err
+          ? String(err.message || "")
+          : "";
+      setError(message || "Không thể xuất lên Sheet. Vui lòng thử lại.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function renderSkeletonRows(count) {
@@ -306,12 +367,14 @@
     return results;
   }
 
-  async function loadCommissionForVisibleRows(visibleRows) {
+  async function prefetchCommissionForFilteredRows(filteredRows) {
     const token = getToken();
     if (!token) return;
-    if (!Array.isArray(visibleRows) || visibleRows.length === 0) return;
+    if (!Array.isArray(filteredRows) || filteredRows.length === 0) return;
 
-    const tasks = visibleRows
+    const runId = (commissionPrefetchRunId += 1);
+
+    const tasks = filteredRows
       .map((r) => (r && typeof r === "object" ? r : {}))
       .map((obj) => {
         const email = String(obj.email ?? obj.mail ?? "").trim();
@@ -322,29 +385,59 @@
 
     if (!tasks.length) return;
 
+    const unique = new Map();
+    for (const t of tasks) {
+      if (!unique.has(t.email)) unique.set(t.email, t);
+    }
+    const deduped = Array.from(unique.values());
+
+    const missing = deduped.filter(
+      (t) => !commissionCacheByEmail.has(t.email) && !commissionInFlightByEmail.has(t.email),
+    );
+
+    if (!missing.length) return;
+
     try {
       setCommissionLoading(true);
-      for (const t of tasks) {
-        renderCommissionCellLoading(t.email);
+
+      for (const t of missing) {
+        commissionInFlightByEmail.add(t.email);
       }
 
-      await runWithConcurrencyLimit(tasks, 3, async (t) => {
-        if (commissionCacheByEmail.has(t.email)) {
-          const cached = commissionCacheByEmail.get(t.email);
-          const raw = getWeeklyTransactionVolumeRaw(cached);
-          renderCommissionCellValue(t.email, raw == null ? "" : String(raw));
-          return;
+      await runWithConcurrencyLimit(missing, 3, async (t) => {
+        try {
+          const commissionRow = await fetchCommissionByKeyword(token, t.keyword);
+          commissionCacheByEmail.set(t.email, commissionRow);
+          const raw = getWeeklyTransactionVolumeRaw(commissionRow);
+          if (runId === commissionPrefetchRunId) {
+            renderCommissionCellValue(t.email, raw == null ? "" : String(raw));
+          }
+        } catch {
+          // Keep the table usable even if commission fetch fails.
+        } finally {
+          commissionInFlightByEmail.delete(t.email);
         }
-
-        const commissionRow = await fetchCommissionByKeyword(token, t.keyword);
-        commissionCacheByEmail.set(t.email, commissionRow);
-        const raw = getWeeklyTransactionVolumeRaw(commissionRow);
-        renderCommissionCellValue(t.email, raw == null ? "" : String(raw));
       });
-    } catch (_err) {
-      // Keep the table usable even if commission fetch fails.
     } finally {
       setCommissionLoading(false);
+    }
+  }
+
+  async function loadCommissionForVisibleRows(visibleRows) {
+    if (!Array.isArray(visibleRows) || visibleRows.length === 0) return;
+
+    for (const r of visibleRows) {
+      const obj = r && typeof r === "object" ? r : {};
+      const email = String(obj.email ?? obj.mail ?? "").trim();
+      if (!email) continue;
+
+      if (commissionCacheByEmail.has(email)) {
+        const cached = commissionCacheByEmail.get(email);
+        const raw = getWeeklyTransactionVolumeRaw(cached);
+        renderCommissionCellValue(email, raw == null ? "" : String(raw));
+      } else {
+        renderCommissionCellLoading(email);
+      }
     }
   }
 
@@ -360,6 +453,7 @@
     renderRows(rows, start, total);
     updatePagerUi();
     void loadCommissionForVisibleRows(rows);
+    void prefetchCommissionForFilteredRows(filteredRows);
   }
 
   async function refresh() {
@@ -423,6 +517,18 @@
   refreshBtn.addEventListener("click", () => {
     void refresh();
   });
+
+  if (exportExcelBtn) {
+    exportExcelBtn.addEventListener("click", () => {
+      void exportExcel();
+    });
+  }
+
+  if (exportSheetBtn) {
+    exportSheetBtn.addEventListener("click", () => {
+      void exportSheet();
+    });
+  }
 
   if (searchInput && searchInput instanceof HTMLInputElement) {
     searchInput.addEventListener("keydown", (e) => {

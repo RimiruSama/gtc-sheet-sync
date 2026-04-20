@@ -1,6 +1,8 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "path";
 import axios from "axios";
+import { exportRowsToXlsx } from "./services/exporter";
+import { enrichRowsWithWeeklyTransactionVolume } from "./services/commission";
 
 type FetchReportArgs = {
   token?: string;
@@ -59,6 +61,8 @@ function endOfWeekSunday(d: Date) {
   return endOfDay(end);
 }
 
+let mainWindow: BrowserWindow | null = null;
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
@@ -68,6 +72,11 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  mainWindow = win;
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
   });
 
   win.loadFile(path.join(__dirname, "../renderer/index.html"));
@@ -427,9 +436,44 @@ if (ipcMain && typeof ipcMain.handle === "function") {
     }
   });
 
-  ipcMain.handle("export-excel", async () => {
+  ipcMain.handle("export-excel", async (_event, args?: any) => {
     try {
-      return { ok: true };
+      const options = {
+        title: "Save Excel file",
+        defaultPath: "mygtc-report.xlsx",
+        filters: [{ name: "Excel Workbook", extensions: ["xlsx"] }],
+      };
+
+      const result = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, options)
+        : await dialog.showSaveDialog(options);
+
+      if (result.canceled || !result.filePath) {
+        return { ok: true, cancelled: true };
+      }
+
+      const token =
+        args && typeof args === "object" ? String(args.token || "").trim() : "";
+      const data = Array.isArray(args) ? args : args?.data;
+      const rows = Array.isArray(data) ? data : [];
+
+      const now = new Date();
+      const weekStart = startOfWeekMonday(now);
+      const weekEnd = endOfWeekSunday(now);
+
+      const enrichedRows = token
+        ? await enrichRowsWithWeeklyTransactionVolume({
+            token,
+            rows,
+            concurrency: 3,
+            timeoutMs: 15_000,
+            tradeStartEpochSec: toEpochSeconds(weekStart),
+            tradeEndEpochSec: toEpochSeconds(weekEnd),
+          })
+        : rows;
+
+      await exportRowsToXlsx(result.filePath, enrichedRows);
+      return { ok: true, path: result.filePath };
     } catch {
       return { ok: false };
     }

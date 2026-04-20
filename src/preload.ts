@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.invoke("fetch-report", { token, params }),
   fetchCommission: (token?: string, params?: { keyword?: string; email?: string }) =>
     ipcRenderer.invoke("fetch-commission", { token, params }),
-  exportExcel: (data: any[]) => ipcRenderer.invoke("export-excel", data),
+  exportExcel: (data: any[], token?: string) =>
+    ipcRenderer.invoke("export-excel", { data, token }),
   pushSheets: (data: any[]) => ipcRenderer.invoke("push-sheets", data),
 });

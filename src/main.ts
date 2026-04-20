@@ -4,6 +4,14 @@ import axios from "axios";
 import { exportRowsToXlsx } from "./services/exporter";
 import { enrichRowsWithWeeklyTransactionVolume } from "./services/commission";
 
+const API_BASE_URL = "https://web.mygtc.app/api/agent" as const;
+const API_ENDPOINTS = {
+  IB_REPORT: `${API_BASE_URL}/ib_report`,
+  COMMISSION_IB_LIST: `${API_BASE_URL}/commission_ib_list`,
+} as const;
+
+const DEFAULT_TIMEOUT_MS = 30_000 as const;
+
 type FetchReportArgs = {
   token?: string;
   params?: {
@@ -20,10 +28,8 @@ type FetchCommissionArgs = {
   };
 };
 
-function normalizeKey(input: unknown) {
-  return String(input ?? "")
-    .trim()
-    .toLowerCase();
+function trimString(input: unknown) {
+  return typeof input === "string" ? input.trim() : "";
 }
 
 function isTokenErrorMessage(message: string) {
@@ -32,6 +38,25 @@ function isTokenErrorMessage(message: string) {
 
 function toEpochSeconds(date: Date) {
   return Math.floor(date.getTime() / 1000);
+}
+
+function getWeekRange(now: Date) {
+  const weekStart = startOfWeekMonday(now);
+  const weekEnd = endOfWeekSunday(now);
+  return { weekStart, weekEnd };
+}
+
+function buildAuthHeaders(token: string) {
+  return {
+    accept: "application/json, text/plain, */*",
+    "content-type": "application/json",
+    authorization: `Bearer ${token}`,
+    "x-app-lang": "vn",
+  } as const;
+}
+
+function extractApiMessage(data: unknown) {
+  return data && typeof data === "object" ? String((data as any).message || "") : "";
 }
 
 function startOfDay(d: Date) {
@@ -85,16 +110,11 @@ function createWindow() {
 if (ipcMain && typeof ipcMain.handle === "function") {
   ipcMain.handle("fetch-report", async (_event, args?: FetchReportArgs) => {
     try {
-      const token = typeof args?.token === "string" ? args.token.trim() : "";
+      const token = trimString(args?.token);
       if (!token) return [];
-      const keyword =
-        typeof args?.params?.keyword === "string"
-          ? args.params.keyword.trim()
-          : "";
+      const keyword = trimString(args?.params?.keyword);
 
-      const now = new Date();
-      const weekStart = startOfWeekMonday(now);
-      const weekEnd = endOfWeekSunday(now);
+      const { weekStart, weekEnd } = getWeekRange(new Date());
 
       let baseRows: any[] = [];
       try {
@@ -108,25 +128,18 @@ if (ipcMain && typeof ipcMain.handle === "function") {
         };
 
         const ibReportResponse = await axios.post(
-          "https://web.mygtc.app/api/agent/ib_report",
+          API_ENDPOINTS.IB_REPORT,
           ibReportPayload,
           {
-            headers: {
-              accept: "application/json, text/plain, */*",
-              "content-type": "application/json",
-              authorization: `Bearer ${token}`,
-              "x-app-lang": "vn",
-            },
-            timeout: 30_000,
+            headers: buildAuthHeaders(token),
+            timeout: DEFAULT_TIMEOUT_MS,
+            maxRedirects: 0,
             validateStatus: () => true,
           },
         );
 
         const reportData = ibReportResponse.data as any;
-        const reportMessage =
-          reportData && typeof reportData === "object"
-            ? String(reportData.message || "")
-            : "";
+        const reportMessage = extractApiMessage(reportData);
 
         if (ibReportResponse.status !== 200) {
           throw new Error(reportMessage || "Request failed");
@@ -170,154 +183,6 @@ if (ipcMain && typeof ipcMain.handle === "function") {
 
         // Temporarily disable commission_ib_list; only return ib_report rows.
         return baseRows;
-
-        const commissionHeaders = {
-          accept: "application/json, text/plain, */*",
-          "content-type": "application/json",
-          authorization: `Bearer ${token}`,
-          "x-app-lang": "vn",
-        } as const;
-
-        async function fetchCommissionByEmail(email: string) {
-          const payload = {
-            keyword: email,
-            trade_start: toEpochSeconds(weekStart),
-            trade_end: toEpochSeconds(weekEnd),
-            page: 1,
-            page_size: 1,
-          };
-
-          const response = await axios.post(
-            "https://web.mygtc.app/api/agent/commission_ib_list",
-            payload,
-            {
-              headers: commissionHeaders,
-              timeout: 30_000,
-              validateStatus: () => true,
-            },
-          );
-
-          const data = response.data as any;
-          const apiMessage =
-            data && typeof data === "object" ? String(data.message || "") : "";
-
-          if (response.status !== 200) {
-            throw new Error(apiMessage || "Request failed");
-          }
-
-          if (data && typeof data === "object") {
-            if ("success" in data && data.success === false) {
-              throw new Error(apiMessage || "Request failed");
-            }
-            if ("ok" in data && data.ok === false) {
-              throw new Error(apiMessage || "Request failed");
-            }
-            if ("status" in data) {
-              const status = Number((data as any).status);
-              if (Number.isFinite(status) && status !== 200) {
-                throw new Error(apiMessage || "Request failed");
-              }
-            }
-          }
-
-          if (data && typeof data === "object" && "code" in data) {
-            const code = Number(data.code);
-            if (!Number.isFinite(code) || code !== 200) {
-              throw new Error(apiMessage || "Request failed");
-            }
-          }
-
-          const maybeList =
-            data?.data?.list ??
-            data?.data?.rows ??
-            data?.data?.items ??
-            data?.list ??
-            data?.rows ??
-            data?.items ??
-            data?.result ??
-            data;
-
-          const rows = Array.isArray(maybeList) ? maybeList : [];
-          if (!rows.length && apiMessage && isTokenErrorMessage(apiMessage)) {
-            throw new Error(apiMessage);
-          }
-
-          const emailKey = normalizeKey(email);
-          const bestMatch =
-            rows.find(
-              (r) =>
-                normalizeKey((r as any)?.email ?? (r as any)?.mail) ===
-                emailKey,
-            ) ?? rows[0];
-
-          return bestMatch && typeof bestMatch === "object"
-            ? (bestMatch as any)
-            : null;
-        }
-
-        async function runWithConcurrencyLimit<T, R>(
-          items: readonly T[],
-          limit: number,
-          fn: (item: T) => Promise<R>,
-        ): Promise<R[]> {
-          const safeLimit = Math.max(1, Math.trunc(limit || 1));
-          const results: R[] = new Array(items.length) as any;
-          let nextIndex = 0;
-
-          async function worker() {
-            while (true) {
-              const i = nextIndex;
-              nextIndex += 1;
-              if (i >= items.length) return;
-              results[i] = await fn(items[i]);
-            }
-          }
-
-          const workers = Array.from(
-            { length: Math.min(safeLimit, items.length) },
-            () => worker(),
-          );
-          await Promise.all(workers);
-          return results;
-        }
-
-        const commissionResults = await runWithConcurrencyLimit(
-          baseRows,
-          5,
-          async (r) => {
-            const obj = r && typeof r === "object" ? (r as any) : {};
-            const email = String(obj.email ?? obj.mail ?? "").trim();
-            if (!email) return null;
-            const commissionRow = await fetchCommissionByEmail(email);
-            return { email, commissionRow };
-          },
-        );
-
-        const merged = baseRows.map((r, idx) => {
-          const obj = r && typeof r === "object" ? (r as any) : {};
-          const item = commissionResults[idx];
-          const commissionRow =
-            item && typeof item === "object"
-              ? (item as any).commissionRow
-              : null;
-          if (!commissionRow) return r;
-          return {
-            ...obj,
-            ...commissionRow,
-            email: obj.email ?? commissionRow.email ?? commissionRow.mail,
-            realname:
-              obj.realname ??
-              commissionRow.realname ??
-              commissionRow.realName ??
-              commissionRow.full_name ??
-              commissionRow.fullName ??
-              commissionRow.name,
-            deposit_amount: obj.deposit_amount,
-            withdraw_amount: obj.withdraw_amount,
-          };
-        });
-
-        return merged;
       } catch (err) {
         const message =
           err && typeof err === "object" && "message" in err
@@ -339,21 +204,15 @@ if (ipcMain && typeof ipcMain.handle === "function") {
 
   ipcMain.handle("fetch-commission", async (_event, args?: FetchCommissionArgs) => {
     try {
-      const token = typeof args?.token === "string" ? args.token.trim() : "";
+      const token = trimString(args?.token);
       if (!token) return { ok: false, message: "Missing token" };
 
-      const keywordRaw =
-        typeof args?.params?.keyword === "string"
-          ? args.params.keyword.trim()
-          : "";
-      const fallbackEmail =
-        typeof args?.params?.email === "string" ? args.params.email.trim() : "";
+      const keywordRaw = trimString(args?.params?.keyword);
+      const fallbackEmail = trimString(args?.params?.email);
       const keyword = keywordRaw || fallbackEmail;
       if (!keyword) return { ok: true, data: null };
 
-      const now = new Date();
-      const weekStart = startOfWeekMonday(now);
-      const weekEnd = endOfWeekSunday(now);
+      const { weekStart, weekEnd } = getWeekRange(new Date());
 
       const payload = {
         keyword,
@@ -364,23 +223,18 @@ if (ipcMain && typeof ipcMain.handle === "function") {
       };
 
       const response = await axios.post(
-        "https://web.mygtc.app/api/agent/commission_ib_list",
+        API_ENDPOINTS.COMMISSION_IB_LIST,
         payload,
         {
-          headers: {
-            accept: "application/json, text/plain, */*",
-            "content-type": "application/json",
-            authorization: `Bearer ${token}`,
-            "x-app-lang": "vn",
-          },
-          timeout: 30_000,
+          headers: buildAuthHeaders(token),
+          timeout: DEFAULT_TIMEOUT_MS,
+          maxRedirects: 0,
           validateStatus: () => true,
         },
       );
 
       const data = response.data as any;
-      const apiMessage =
-        data && typeof data === "object" ? String(data.message || "") : "";
+      const apiMessage = extractApiMessage(data);
 
       if (response.status !== 200) {
         throw new Error(apiMessage || "Request failed");
@@ -453,13 +307,11 @@ if (ipcMain && typeof ipcMain.handle === "function") {
       }
 
       const token =
-        args && typeof args === "object" ? String(args.token || "").trim() : "";
+        args && typeof args === "object" ? trimString((args as any).token) : "";
       const data = Array.isArray(args) ? args : args?.data;
       const rows = Array.isArray(data) ? data : [];
 
-      const now = new Date();
-      const weekStart = startOfWeekMonday(now);
-      const weekEnd = endOfWeekSunday(now);
+      const { weekStart, weekEnd } = getWeekRange(new Date());
 
       const enrichedRows = token
         ? await enrichRowsWithWeeklyTransactionVolume({

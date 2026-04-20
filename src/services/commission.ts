@@ -91,6 +91,7 @@ async function fetchCommissionRowByKeyword(args: {
         "x-app-lang": "vn",
       },
       timeout: args.timeoutMs,
+      maxRedirects: 0,
       validateStatus: () => true,
     },
   );

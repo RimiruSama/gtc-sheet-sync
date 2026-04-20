@@ -9,8 +9,10 @@
   const searchInput = document.getElementById("searchInput");
   const searchBtn = document.getElementById("searchBtn");
   const pageSizeSelect = document.getElementById("pageSizeSelect");
+  const firstPageBtn = document.getElementById("firstPageBtn");
   const prevPageBtn = document.getElementById("prevPageBtn");
   const nextPageBtn = document.getElementById("nextPageBtn");
+  const lastPageBtn = document.getElementById("lastPageBtn");
   const pageInfo = document.getElementById("pageInfo");
   const rangeInfo = document.getElementById("rangeInfo");
   const exportExcelBtn = document.getElementById("exportExcelBtn");
@@ -64,8 +66,10 @@
     if (exportExcelBtn) exportExcelBtn.disabled = busy;
     if (exportSheetBtn) exportSheetBtn.disabled = busy;
     if (pageSizeSelect) pageSizeSelect.disabled = busy;
+    if (firstPageBtn) firstPageBtn.disabled = busy || page <= 1;
     if (prevPageBtn) prevPageBtn.disabled = busy || page <= 1;
     if (nextPageBtn) nextPageBtn.disabled = busy;
+    if (lastPageBtn) lastPageBtn.disabled = busy;
   }
 
   function setCommissionLoading(next) {
@@ -79,7 +83,9 @@
       setError("");
       const api = window.api;
       if (!api || typeof api.exportExcel !== "function") {
-        setError("Tính năng xuất Excel chưa sẵn sàng. Vui lòng khởi động lại ứng dụng.");
+        setError(
+          "Tính năng xuất Excel chưa sẵn sàng. Vui lòng khởi động lại ứng dụng.",
+        );
         return;
       }
 
@@ -87,7 +93,8 @@
       setLoading(true);
       const result = await api.exportExcel(rows, getToken());
       if (result && typeof result === "object" && "ok" in result) {
-        if (!result.ok) throw new Error("Không thể xuất Excel. Vui lòng thử lại.");
+        if (!result.ok)
+          throw new Error("Không thể xuất Excel. Vui lòng thử lại.");
       }
     } catch (err) {
       const message =
@@ -106,7 +113,9 @@
       setError("");
       const api = window.api;
       if (!api || typeof api.pushSheets !== "function") {
-        setError("Tính năng xuất lên Sheet chưa sẵn sàng. Vui lòng khởi động lại ứng dụng.");
+        setError(
+          "Tính năng xuất lên Sheet chưa sẵn sàng. Vui lòng khởi động lại ứng dụng.",
+        );
         return;
       }
 
@@ -114,7 +123,8 @@
       setLoading(true);
       const result = await api.pushSheets(rows);
       if (result && typeof result === "object" && "ok" in result) {
-        if (!result.ok) throw new Error("Không thể xuất lên Sheet. Vui lòng thử lại.");
+        if (!result.ok)
+          throw new Error("Không thể xuất lên Sheet. Vui lòng thử lại.");
       }
     } catch (err) {
       const message =
@@ -201,6 +211,15 @@
     }
   }
 
+  function resetFilters() {
+    if (searchInput && searchInput instanceof HTMLInputElement) {
+      searchInput.value = "";
+    }
+    keyword = "";
+    searchQuery = "";
+    page = 1;
+  }
+
   /** @param {any} row */
   function rowMatchesQuery(row) {
     if (!searchQuery) return true;
@@ -223,8 +242,10 @@
 
     if (pageInfo) pageInfo.textContent = `Trang ${page}/${totalPages}`;
 
+    if (firstPageBtn) firstPageBtn.disabled = page <= 1;
     if (prevPageBtn) prevPageBtn.disabled = page <= 1;
     if (nextPageBtn) nextPageBtn.disabled = page >= totalPages;
+    if (lastPageBtn) lastPageBtn.disabled = page >= totalPages;
 
     if (rangeInfo) {
       if (!total) {
@@ -392,7 +413,9 @@
     const deduped = Array.from(unique.values());
 
     const missing = deduped.filter(
-      (t) => !commissionCacheByEmail.has(t.email) && !commissionInFlightByEmail.has(t.email),
+      (t) =>
+        !commissionCacheByEmail.has(t.email) &&
+        !commissionInFlightByEmail.has(t.email),
     );
 
     if (!missing.length) return;
@@ -406,7 +429,10 @@
 
       await runWithConcurrencyLimit(missing, 3, async (t) => {
         try {
-          const commissionRow = await fetchCommissionByKeyword(token, t.keyword);
+          const commissionRow = await fetchCommissionByKeyword(
+            token,
+            t.keyword,
+          );
           commissionCacheByEmail.set(t.email, commissionRow);
           const raw = getWeeklyTransactionVolumeRaw(commissionRow);
           if (runId === commissionPrefetchRunId) {
@@ -515,6 +541,7 @@
   });
 
   refreshBtn.addEventListener("click", () => {
+    resetFilters();
     void refresh();
   });
 
@@ -564,6 +591,22 @@
   if (nextPageBtn) {
     nextPageBtn.addEventListener("click", () => {
       page = page + 1;
+      renderPage();
+    });
+  }
+
+  if (firstPageBtn) {
+    firstPageBtn.addEventListener("click", () => {
+      page = 1;
+      renderPage();
+    });
+  }
+
+  if (lastPageBtn) {
+    lastPageBtn.addEventListener("click", () => {
+      const total = getFilteredRows().length;
+      const totalPages = getTotalPages(total);
+      page = totalPages;
       renderPage();
     });
   }
